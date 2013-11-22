@@ -30,7 +30,7 @@ public class JavaCodeSpellchecker {
       examineDirectories.add(toInspectPath);
     }
     
-    int threadCount = Runtime.getRuntime().availableProcessors();
+    int threadCount = 1;//Runtime.getRuntime().availableProcessors();
     final PriorityScheduledExecutor scheduler = new PriorityScheduledExecutor(threadCount, threadCount, Long.MAX_VALUE, 
                                                                               TaskPriority.High, 1000, false);
     scheduler.execute(new Runnable() {

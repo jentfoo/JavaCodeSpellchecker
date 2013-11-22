@@ -43,6 +43,7 @@ public class SpellcheckFileListenerTest {
   
   @Test
   public void isDecelerationLineObjectTrueTest() {
+    assertTrue(SpellcheckFileListener.isObjectDecelerationLine("Map<String, Integer> foo;"));
     assertTrue(SpellcheckFileListener.isObjectDecelerationLine("FooBar foo;"));
     assertTrue(SpellcheckFileListener.isObjectDecelerationLine("FooBar foo = null"));
   }
@@ -62,8 +63,11 @@ public class SpellcheckFileListenerTest {
     assertEquals("foo", SpellcheckFileListener.getVariable("int foo=bar;"));
     assertEquals("foo", SpellcheckFileListener.getVariable("Double foo=bar;"));
     assertEquals("foo", SpellcheckFileListener.getVariable("short foo;"));
+    assertEquals("foo", SpellcheckFileListener.getVariable("short foo,"));
     // objects
     assertEquals("foo", SpellcheckFileListener.getVariable("FooBar foo;"));
     assertEquals("foo", SpellcheckFileListener.getVariable("FooBar foo = null"));
+    // functions
+    assertEquals("testFunction", SpellcheckFileListener.getVariable("public void testFunction"));
   }
 }
