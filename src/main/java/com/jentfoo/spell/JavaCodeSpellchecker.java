@@ -40,7 +40,7 @@ public class JavaCodeSpellchecker {
       }
     });
     try {
-      FileCrawler fc = new FileCrawler(scheduler, 100, -1);
+      FileCrawler fc = new FileCrawler(scheduler, 500, -1);
       
       fc.addFilter(new HiddenFileFilter());
       
