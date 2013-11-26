@@ -30,7 +30,7 @@ public class JavaCodeSpellchecker {
       examineDirectories.add(toInspectPath);
     }
     
-    int threadCount = 1;//Runtime.getRuntime().availableProcessors();
+    int threadCount = Runtime.getRuntime().availableProcessors();
     final PriorityScheduledExecutor scheduler = new PriorityScheduledExecutor(threadCount, threadCount, Long.MAX_VALUE, 
                                                                               TaskPriority.High, 1000, false);
     scheduler.execute(new Runnable() {
@@ -40,7 +40,7 @@ public class JavaCodeSpellchecker {
       }
     });
     try {
-      FileCrawler fc = new FileCrawler(scheduler, 5000, -1);
+      FileCrawler fc = new FileCrawler(scheduler, 100, -1);
       
       fc.addFilter(new HiddenFileFilter());
       

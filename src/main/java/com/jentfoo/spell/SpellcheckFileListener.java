@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -15,7 +14,6 @@ import java.util.regex.Pattern;
 
 import org.languagetool.JLanguageTool;
 import org.languagetool.language.English;
-import org.languagetool.rules.Rule;
 import org.languagetool.rules.RuleMatch;
 import org.threadly.util.ExceptionUtils;
 
@@ -60,69 +58,121 @@ public class SpellcheckFileListener implements FileListenerInterface {
     }
   }
   
-  private volatile boolean outputted = false;
-  
   protected void spellCheckJavaFile(File file) throws IOException {
-    System.out.println("Checking file: " + file);
+    StringBuilder fileResult = new StringBuilder(32);
+    
     JLanguageTool langTool = new JLanguageTool(new English());
-    if (! outputted) {
-      outputted = true;
-      System.out.println("Rules:");
-      Iterator<Rule> it = langTool.getAllActiveRules().iterator();
-      while (it.hasNext()) {
-        Rule r = it.next();
-        System.out.println("\t" + r.getId());
-      }
-    }
     langTool.disableRule("COMMA_PARENTHESIS_WHITESPACE");
     langTool.disableRule("EN_UNPAIRED_BRACKETS");
     langTool.disableRule("UPPERCASE_SENTENCE_START");
     langTool.disableRule("WHITESPACE_RULE");
+    langTool.disableRule("ENGLISH_WORD_REPEAT_RULE");
     
     BufferedReader br = new BufferedReader(new FileReader(file));
     try {
       int lineCount = 0;
-      String currentJavaLine = EMPTY_STR;
+      String currentJavaLine = null;
+      int currentJavaLineCount = 0;
       String line;
       boolean inCommentSection = false;
       while ((line = br.readLine()) != null) {
         line = line.trim();
         lineCount++;
         
+        if (line.length() == 0) {
+          continue;
+        }
+        
+        StringBuilder lineResult = null;
         if (line.startsWith("//")) {
-          //System.out.println("Examining comment line: " + line);
-          analyzeCommentSpelling(langTool, line);
+          lineResult = analyzeCommentSpelling(langTool, line);
+          currentJavaLineCount = 1;
         } else {
           if (line.startsWith("/*")) {
             inCommentSection = true;
           }
-          currentJavaLine += line;
+          if (currentJavaLine == null) {
+            currentJavaLine = line;
+            currentJavaLineCount = 1;
+          } else {
+            currentJavaLine += line;
+            currentJavaLineCount++;
+          }
           if (inCommentSection && currentJavaLine.endsWith("*/")) {
             currentJavaLine = minimizeLine(currentJavaLine);
-            //System.out.println("Examining comment line: " + currentJavaLine);
-            analyzeCommentSpelling(langTool, currentJavaLine);
+            lineResult = analyzeCommentSpelling(langTool, currentJavaLine);
             
-            currentJavaLine = EMPTY_STR;
+            currentJavaLine = null;
           } else if (isEndOfJavaLine(currentJavaLine)) {
             currentJavaLine = minimizeLine(currentJavaLine);
-            //System.out.println("Examining code line: " + currentJavaLine);
             List<String> toInspectLines = breakApartLine(currentJavaLine);
+            boolean hadVariables = false;
             Iterator<String> it = toInspectLines.iterator();
             while (it.hasNext()) {
               String inspectLine = it.next();
               String variable = getVariable(inspectLine);
               if (variable != null) {
-                //System.out.println("Inspecting variable: " + variable);
-                analyzeVariableSpelling(langTool, variable);
+                hadVariables = true;
+                StringBuilder newResult = analyzeVariableSpelling(langTool, variable);
+                if (lineResult == null) {
+                  lineResult = newResult;
+                } else {
+                  if (lineResult.length() > 0 && newResult.length() > 0) {
+                    lineResult.append('\n');
+                  }
+                  lineResult.append(newResult);
+                }
               }
             }
             
-            currentJavaLine = EMPTY_STR;
+            if (! hadVariables) {
+              /*if (lineResult == null) {
+                lineResult = new StringBuilder();
+              }
+              lineResult.append("Not analyzing line: ").append(currentJavaLine);*/
+            }
+            
+            currentJavaLine = null;
           }
+        }
+        
+        if (lineResult != null && lineResult.length() != 0) {
+          lineResult.insert(0, '\t');
+          int newLineIndex = -1;
+          while ((newLineIndex = lineResult.indexOf("\n", newLineIndex)) != -1) {
+            lineResult.insert(newLineIndex + 1, '\t');
+            newLineIndex += 2;  // add two to handle insertion
+          }
+          
+          if (fileResult.length() != 0) {
+            fileResult.append('\n');
+          }
+          if (currentJavaLineCount > 1) {
+            fileResult.append("-- lines: ")
+                      .append(lineCount - currentJavaLineCount + 1)
+                      .append(" to ")
+                      .append(lineCount);
+          } else {
+            fileResult.append("-- line: ")
+                      .append(lineCount);
+          }
+          fileResult.append('\n');
+          fileResult.append(lineResult);
         }
       }
     } finally {
       br.close();
+    }
+    
+    if (fileResult.length() != 0) {
+      outputResults(fileResult.toString(), file);
+    }
+  }
+  
+  private void outputResults(String potentialErrors, File file) {
+    synchronized (this) {
+      System.out.println("Potential errors for file: " + file);
+      System.out.println(potentialErrors);
     }
   }
 
@@ -204,31 +254,53 @@ public class SpellcheckFileListener implements FileListenerInterface {
     }
   }
   
-  protected static void analyzeVariableSpelling(JLanguageTool langTool, 
-                                                String variable) throws IOException {
+  protected static StringBuilder analyzeVariableSpelling(JLanguageTool langTool, 
+                                                         String variable) throws IOException {
+    StringBuilder result = new StringBuilder(32);
+    
     for(String word : variable.split("(?<!(^|[A-Z]))(?=[A-Z])|(?<!^)(?=[A-Z][a-z])")) {
       if (word.length() > MIN_WORD_LENGTH) {
-        analyzeSpelling(langTool, word);
+        result.append(analyzeSpelling(langTool, word));
       }
     }
+    
+    return result;
   }
   
-  protected static void analyzeCommentSpelling(JLanguageTool langTool, 
-                                               String commentSection) throws IOException {
-    analyzeSpelling(langTool, commentSection);
+  protected static StringBuilder analyzeCommentSpelling(JLanguageTool langTool, 
+                                                        String commentSection) throws IOException {
+    commentSection = commentSection.replaceAll("(/\\*|//|\\*/)", "");
+    commentSection = commentSection.trim();
+    
+    return analyzeSpelling(langTool, commentSection);
   }
   
-  protected static void analyzeSpelling(JLanguageTool langTool, 
-                                        String line) throws IOException {
+  protected static StringBuilder analyzeSpelling(JLanguageTool langTool, 
+                                                 String line) throws IOException {
     List<RuleMatch> matches = langTool.check(line);
+    
+    StringBuilder result;
+    if (matches.isEmpty()) {
+      result = new StringBuilder(0);
+    } else {
+      result = new StringBuilder(32);
+    }
+    
     Iterator<RuleMatch> it = matches.iterator();
     while (it.hasNext()) {
       RuleMatch rm = it.next();
-      // TODO output in a different way
-      System.out.println("Potential error: " + rm.getMessage());
-      System.out.println("Suggested correction: " +
-          rm.getSuggestedReplacements());
+      result.append(rm.getMessage())
+            .append('\n');
+      result.append("Suggested correction: ")
+            .append(rm.getSuggestedReplacements());
+      if (it.hasNext()) {
+        result.append('\n');
+      } else {
+        break;
+      }
     }
+    
+    return result;
   }
 
   public int getExaminedFileCount() {
