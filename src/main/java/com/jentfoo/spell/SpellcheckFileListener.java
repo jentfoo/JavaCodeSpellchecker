@@ -2,6 +2,7 @@ package com.jentfoo.spell;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Iterator;
@@ -20,6 +21,8 @@ import org.threadly.util.ExceptionUtils;
 import com.jentfoo.file.FileListenerInterface;
 
 public class SpellcheckFileListener implements FileListenerInterface {
+  private static final int MAX_TEXT_FILE_SIZE = 1024 * 1024 * 100;
+  private static final boolean IGNORE_MARKUP_FILES = true;
   private static final String JAVA_EXTENSION = ".java";
   private static final String EMPTY_STR = "";
   private static final String SEMI_STR = ";";
@@ -40,33 +43,146 @@ public class SpellcheckFileListener implements FileListenerInterface {
   private static final Pattern FUNCTION_GROUP_PATTERN = Pattern.compile("(public|private|protected) " + VARIABLE_NAME_PATTERN + " (" + 
                                                                           VARIABLE_NAME_PATTERN + ")");
   
-  private final AtomicInteger examinedFiles = new AtomicInteger(0);
+  private final boolean scanNonJavaFiles;
+  private final AtomicInteger examinedJavaFiles;
+  
+  public SpellcheckFileListener(boolean scanNonJavaFiles) {
+    this.scanNonJavaFiles = scanNonJavaFiles;
+    examinedJavaFiles = new AtomicInteger(0);
+  }
+  
+  public int getExaminedJavaFileCount() {
+    return examinedJavaFiles.get();
+  }
 
   @Override
   public void handleFile(File file) {
-    if (! file.getName().endsWith(JAVA_EXTENSION)) {
-      // ignore none-java files
-      return;
-    }
-    
-    examinedFiles.incrementAndGet();
-    
     try {
-      spellCheckJavaFile(file);
+      StringBuilder fileResult = null;
+      if (file.getName().endsWith(JAVA_EXTENSION)) {
+        fileResult = spellCheckJavaFile(file);
+        
+        examinedJavaFiles.incrementAndGet();
+      } else if (scanNonJavaFiles && 
+                 isTextFile(file) && 
+                 file.length() < MAX_TEXT_FILE_SIZE) {
+        fileResult = spellCheckTextFile(file);
+      }
+      
+      if (fileResult != null && fileResult.length() > 0) {
+        outputResults(fileResult.toString(), file);
+      }
     } catch (Exception e) {
       throw ExceptionUtils.makeRuntime(e);
     }
   }
   
-  protected void spellCheckJavaFile(File file) throws IOException {
-    StringBuilder fileResult = new StringBuilder(32);
-    
+  private void outputResults(String potentialErrors, File file) {
+    synchronized (this) {
+      System.out.println("Potential errors for file: " + file);
+      System.out.println(potentialErrors);
+    }
+  }
+  
+  private static JLanguageTool buildJLangTool() throws IOException {
     JLanguageTool langTool = new JLanguageTool(new English());
+    
     langTool.disableRule("COMMA_PARENTHESIS_WHITESPACE");
     langTool.disableRule("EN_UNPAIRED_BRACKETS");
     langTool.disableRule("UPPERCASE_SENTENCE_START");
     langTool.disableRule("WHITESPACE_RULE");
+    langTool.disableRule("DOUBLE_PUNCTUATION");
     langTool.disableRule("ENGLISH_WORD_REPEAT_RULE");
+    langTool.disableRule("ENGLISH_WORD_REPEAT_BEGINNING_RULE");
+    
+    return langTool;
+  }
+  
+  private StringBuilder spellCheckTextFile(File file) throws IOException {
+    JLanguageTool langTool = buildJLangTool();
+    
+    String fileString = getFileString(file, Integer.MAX_VALUE);
+    List<RuleMatch> matches = langTool.check(fileString);
+    
+    if (matches.isEmpty()) {
+      return new StringBuilder(0);
+    }
+    StringBuilder result = new StringBuilder(32 * matches.size());
+    
+    Iterator<RuleMatch> it = matches.iterator();
+    while (it.hasNext()) {
+      RuleMatch rm = it.next();
+      result.append("line:").append(rm.getLine())
+            .append(",column:").append(rm.getColumn())
+            .append(" - ").append(rm.getMessage())
+            //.append("...").append(rm.getRule().getId())
+            .append('\n');
+      result.append("Suggested correction: ")
+            .append(rm.getSuggestedReplacements());
+      if (it.hasNext()) {
+        result.append('\n');
+      } else {
+        break;
+      }
+    }
+    
+    return result;
+  }
+  
+  private static String getFileString(File f, int maxSize) throws IOException {
+    int size = (int)Math.min(maxSize, f.length());
+    byte[] data = new byte[size];
+    FileInputStream in = new FileInputStream(f);
+    try {
+      in.read(data);
+    } finally {
+      in.close();
+    }
+    return new String(data, "ISO-8859-1");
+  }
+
+  private boolean isTextFile(File f) throws IOException {
+    String fileName = f.getName();
+    // eliminate some common file names
+    if (IGNORE_MARKUP_FILES && 
+          (fileName.endsWith(".html") || 
+             fileName.endsWith(".xml") || 
+             fileName.endsWith(".class"))) {
+      return false;
+    } else if (! f.exists()) {
+      return false;
+    }
+    
+    String s = getFileString(f, 1000);
+    // will delete all text signs
+    String s2 = s.replaceAll("[a-zA-Z0-9ßöäü\\.\\*!\"§\\$\\%&/()=\\?@~'#:,;\\"+
+                               "+><\\|\\[\\]\\{\\}\\^°²³\\\\ \\n\\r\\t_\\-`´âêîô"+
+                               "ÂÊÔÎáéíóàèìòÁÉÍÓÀÈÌÒ©‰¢£¥€±¿»«¼½¾™ª]", "");
+
+    // percentage of text signs in the text
+    double d = (double)(s.length() - s2.length()) / (double)(s.length());
+    if (d > 0.95) {
+      if (IGNORE_MARKUP_FILES) {
+        // is a text document, now make sure it is not markup
+        String s3 = s2.replaceAll("[<|>]", "");
+        d = (double)(s2.length() - s3.length()) / (double)(s2.length());
+        if (d > 0.95) {
+          return true;
+        } else {
+          //System.out.println("File is markup: " + f);
+          return false;
+        }
+      } else {
+        return true;
+      }
+    } else {
+      return false;
+    }
+  }
+  
+  protected StringBuilder spellCheckJavaFile(File file) throws IOException {
+    StringBuilder fileResult = new StringBuilder(32);
+    JLanguageTool langTool = buildJLangTool();
     
     BufferedReader br = new BufferedReader(new FileReader(file));
     try {
@@ -164,16 +280,7 @@ public class SpellcheckFileListener implements FileListenerInterface {
       br.close();
     }
     
-    if (fileResult.length() != 0) {
-      outputResults(fileResult.toString(), file);
-    }
-  }
-  
-  private void outputResults(String potentialErrors, File file) {
-    synchronized (this) {
-      System.out.println("Potential errors for file: " + file);
-      System.out.println(potentialErrors);
-    }
+    return fileResult;
   }
 
   protected static boolean isEndOfJavaLine(String line) {
@@ -301,9 +408,5 @@ public class SpellcheckFileListener implements FileListenerInterface {
     }
     
     return result;
-  }
-
-  public int getExaminedFileCount() {
-    return examinedFiles.get();
   }
 }

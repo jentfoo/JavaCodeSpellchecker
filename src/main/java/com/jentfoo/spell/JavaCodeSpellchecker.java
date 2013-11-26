@@ -44,13 +44,13 @@ public class JavaCodeSpellchecker {
       
       fc.addFilter(new HiddenFileFilter());
       
-      SpellcheckFileListener sfl = new SpellcheckFileListener();
+      SpellcheckFileListener sfl = new SpellcheckFileListener(true);
       fc.addListener(sfl);
       
       // blocks till computation is done
       fc.crawlDirectories(examineDirectories);
       
-      if (sfl.getExaminedFileCount() == 0) {
+      if (sfl.getExaminedJavaFileCount() == 0) {
         System.err.println("No java files found under directories: " + examineDirectories);
       } else {
         System.out.println("\nDONE!!");
