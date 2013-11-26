@@ -86,6 +86,7 @@ public class SpellcheckFileListener implements FileListenerInterface {
   
   private static JLanguageTool buildJLangTool() throws IOException {
     JLanguageTool langTool = new JLanguageTool(new English());
+    langTool.activateDefaultPatternRules();
     
     langTool.disableRule("COMMA_PARENTHESIS_WHITESPACE");
     langTool.disableRule("EN_UNPAIRED_BRACKETS");
@@ -94,6 +95,13 @@ public class SpellcheckFileListener implements FileListenerInterface {
     langTool.disableRule("DOUBLE_PUNCTUATION");
     langTool.disableRule("ENGLISH_WORD_REPEAT_RULE");
     langTool.disableRule("ENGLISH_WORD_REPEAT_BEGINNING_RULE");
+    langTool.disableRule("EN_QUOTES");
+    langTool.disableRule("DT_JJ_NO_NOUN");
+    langTool.disableRule("THREE_NN");
+    langTool.disableRule("HE_VERB_AGR");
+    langTool.disableRule("PERIOD_OF_TIME");
+    langTool.disableRule("BEEN_PART_AGREEMENT");
+    //langTool.disableRule("");
     
     return langTool;
   }
@@ -397,6 +405,7 @@ public class SpellcheckFileListener implements FileListenerInterface {
     while (it.hasNext()) {
       RuleMatch rm = it.next();
       result.append(rm.getMessage())
+            /*.append(" - ").append(rm.getRule().getId())*/
             .append('\n');
       result.append("Suggested correction: ")
             .append(rm.getSuggestedReplacements());
