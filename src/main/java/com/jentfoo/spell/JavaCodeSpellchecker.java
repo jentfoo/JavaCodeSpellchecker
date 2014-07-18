@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.threadly.concurrent.PriorityScheduledExecutor;
+import org.threadly.concurrent.PriorityScheduler;
 import org.threadly.concurrent.TaskPriority;
 
 import com.jentfoo.file.FileCrawler;
@@ -31,8 +31,8 @@ public class JavaCodeSpellchecker {
     }
     
     int threadCount = Runtime.getRuntime().availableProcessors();
-    final PriorityScheduledExecutor scheduler = new PriorityScheduledExecutor(threadCount, threadCount, Long.MAX_VALUE, 
-                                                                              TaskPriority.High, 1000, false);
+    final PriorityScheduler scheduler = new PriorityScheduler(threadCount, threadCount, Long.MAX_VALUE, 
+                                                              TaskPriority.High, 1000, false);
     scheduler.execute(new Runnable() {
       @Override
       public void run() {
