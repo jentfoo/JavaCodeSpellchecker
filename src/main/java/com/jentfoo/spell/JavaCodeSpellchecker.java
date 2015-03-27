@@ -31,12 +31,11 @@ public class JavaCodeSpellchecker {
     }
     
     int threadCount = Runtime.getRuntime().availableProcessors();
-    final PriorityScheduler scheduler = new PriorityScheduler(threadCount, threadCount, Long.MAX_VALUE, 
-                                                              TaskPriority.High, 1000, false);
+    final PriorityScheduler scheduler = new PriorityScheduler(threadCount, TaskPriority.High, 1000, false);
     scheduler.execute(new Runnable() {
       @Override
       public void run() {
-        scheduler.prestartAllCoreThreads();
+        scheduler.prestartAllThreads();
       }
     });
     try {
